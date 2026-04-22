@@ -15,6 +15,7 @@ dependencies = [
     "langfuse>=2.0,<3.0",
     "litellm>=1.50",
     "alpaca-py>=0.30",
+    "pytz>=2024.1",  # alpaca-py 0.43 imports pytz but does not declare it
     "asyncpg>=0.30",
     "redis[hiredis]>=5.0",
     "pydantic>=2.0",
