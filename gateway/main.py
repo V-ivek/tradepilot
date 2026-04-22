@@ -7,6 +7,7 @@ from gateway.routes import (
     analyst,
     estimates,
     fundamentals,
+    health,
     news,
     price_history,
     profile,
@@ -34,6 +35,7 @@ def create_app() -> FastAPI:
     app.include_router(fundamentals.router)
     app.include_router(estimates.router)
     app.include_router(analyst.router)
+    app.include_router(health.router)
     return app
 
 
