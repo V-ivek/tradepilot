@@ -8,10 +8,11 @@ Both helpers are overridden in tests via ``app.dependency_overrides``.
 """
 
 import httpx
-from fastapi import Depends, Request
+from fastapi import Depends, HTTPException, Request
 
 from gateway.providers.factory import get_default_registry
 from gateway.providers.registry import ProviderRegistry
+from gateway.services.paper_trading import PaperTradingService
 
 
 def get_http_client(request: Request) -> httpx.AsyncClient:
@@ -30,3 +31,13 @@ def get_registry(
         registry = get_default_registry(http_client)
         request.app.state.registry = registry
     return registry
+
+
+def get_paper_trading(request: Request) -> PaperTradingService:
+    adapter: PaperTradingService | None = getattr(request.app.state, "paper_trading", None)
+    if adapter is None:
+        raise HTTPException(
+            status_code=503,
+            detail="Paper trading not available — Alpaca keys are not configured.",
+        )
+    return adapter

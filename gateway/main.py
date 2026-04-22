@@ -15,6 +15,7 @@ from gateway.routes import (
     profile,
     quotes,
     search,
+    trading,
 )
 from gateway.services.paper_trading_alpaca import AlpacaPaperTradingAdapter
 
@@ -76,6 +77,7 @@ def create_app() -> FastAPI:
     app.include_router(estimates.router)
     app.include_router(analyst.router)
     app.include_router(health.router)
+    app.include_router(trading.router)
     return app
 
 
