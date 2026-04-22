@@ -3,7 +3,16 @@ from contextlib import asynccontextmanager
 import httpx
 from fastapi import FastAPI
 
-from gateway.routes import news, price_history, profile, quotes, search
+from gateway.routes import (
+    analyst,
+    estimates,
+    fundamentals,
+    news,
+    price_history,
+    profile,
+    quotes,
+    search,
+)
 
 
 @asynccontextmanager
@@ -22,6 +31,9 @@ def create_app() -> FastAPI:
     app.include_router(news.router)
     app.include_router(profile.router)
     app.include_router(price_history.router)
+    app.include_router(fundamentals.router)
+    app.include_router(estimates.router)
+    app.include_router(analyst.router)
     return app
 
 
