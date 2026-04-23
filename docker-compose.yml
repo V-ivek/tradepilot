@@ -1,0 +1,114 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: postgres
+    ports:
+      - "4703:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./scripts/init-db.sh:/docker-entrypoint-initdb.d/init-db.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "4704:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  litellm:
+    image: ghcr.io/berriai/litellm:main-stable
+    ports:
+      - "4701:4000"
+    environment:
+      LITELLM_MASTER_KEY: sk-litellm-dev
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+    volumes:
+      - ./litellm/config.yaml:/app/config.yaml:ro
+    command: ["--config", "/app/config.yaml", "--port", "4000"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  langfuse:
+    image: langfuse/langfuse:2
+    ports:
+      - "4702:3000"
+    environment:
+      DATABASE_URL: postgresql://langfuse:langfuse@postgres:5432/langfuse
+      NEXTAUTH_SECRET: dev-secret-change-me
+      NEXTAUTH_URL: http://localhost:4702
+      SALT: dev-salt
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  gateway:
+    build:
+      context: .
+      dockerfile: gateway/Dockerfile
+    ports:
+      - "4706:8000"
+    environment:
+      ALPACA_API_KEY_ID: ${ALPACA_API_KEY_ID}
+      ALPACA_API_SECRET_KEY: ${ALPACA_API_SECRET_KEY}
+      ALPACA_PAPER_ONLY: "true"
+      FINNHUB_API_KEY: ${FINNHUB_API_KEY:-}
+      ALPHA_VANTAGE_API_KEY: ${ALPHA_VANTAGE_API_KEY:-}
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "4700:8000"
+    environment:
+      LITELLM_BASE_URL: http://litellm:4000/v1
+      LITELLM_API_KEY: sk-litellm-dev
+      DATABASE_URL: postgresql+asyncpg://assistant:assistant@postgres:5432/assistant
+      REDIS_URL: redis://redis:6379/0
+      GATEWAY_URL: http://gateway:8000
+      ALPACA_PAPER_ONLY: "true"
+      JWT_SECRET: ${JWT_SECRET:-dev-secret-change-me}
+      LANGFUSE_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY:-}
+      LANGFUSE_SECRET_KEY: ${LANGFUSE_SECRET_KEY:-}
+      LANGFUSE_HOST: http://langfuse:3000
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      litellm:
+        condition: service_started
+      gateway:
+        condition: service_started
+
+  chat-ui:
+    build:
+      context: .
+      dockerfile: tools/Dockerfile
+    ports:
+      - "4705:8501"
+    environment:
+      APP_BASE_URL: http://app:8000
+      JWT_SECRET: ${JWT_SECRET:-dev-secret-change-me}
+    depends_on:
+      app:
+        condition: service_started
+
+volumes:
+  postgres-data:
+  redis-data:
