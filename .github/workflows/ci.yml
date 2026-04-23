@@ -70,6 +70,5 @@ jobs:
         with:
           enable-cache: true
       - run: uv sync --extra dev --frozen
-      - name: Run eval suite against cached fixtures
+      - name: Run eval suite against FakeAgentsTarget
         run: uv run pytest -m eval -q
-        continue-on-error: true  # evals not yet wired in v0.1
