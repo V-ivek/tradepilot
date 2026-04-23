@@ -89,17 +89,29 @@ def _route_after_classifier(state: AssistantState) -> str:
 
 
 def default_checkpointer(database_url: str | None = None) -> Any:
-    """Return a PostgresSaver when ``database_url`` is set, else MemorySaver.
+    """Return a PostgresSaver when ``database_url`` is set AND Postgres is
+    reachable, else MemorySaver.
 
-    The PostgresSaver import is deferred so test environments without
-    ``langgraph-checkpoint-postgres`` or a running Postgres still work.
+    ``PostgresSaver.from_conn_string`` returns a context manager; we enter it
+    eagerly and return the underlying saver. If entry fails (no Postgres, bad
+    URL, missing extension), we fall back to MemorySaver so the app can still
+    boot in tests and the minimal quickstart.
     """
     if not database_url:
         return MemorySaver()
     try:
+        from langgraph.checkpoint.base import BaseCheckpointSaver
         from langgraph.checkpoint.postgres import PostgresSaver  # type: ignore
 
-        return PostgresSaver.from_conn_string(database_url)
+        candidate = PostgresSaver.from_conn_string(database_url)
+        if isinstance(candidate, BaseCheckpointSaver):
+            return candidate
+        # Context-manager form: enter once; caller owns the lifecycle.
+        if hasattr(candidate, "__enter__"):
+            saver = candidate.__enter__()
+            if isinstance(saver, BaseCheckpointSaver):
+                return saver
+        return MemorySaver()
     except Exception as e:  # pragma: no cover — falls back in dev
         logger.warning("Failed to construct PostgresSaver (%s); falling back to MemorySaver.", e)
         return MemorySaver()
