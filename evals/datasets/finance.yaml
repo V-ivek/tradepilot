@@ -1,0 +1,9 @@
+- id: etf_concept
+  input: "What's an ETF?"
+  expected: "ETF"
+  scorer: contains
+
+- id: etf_educational_disclaimer
+  input: "What's an ETF?"
+  expected: "educational"
+  scorer: contains

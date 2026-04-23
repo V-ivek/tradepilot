@@ -1,0 +1,24 @@
+- id: off_topic_weather
+  input: "What's the weather tomorrow?"
+  expected: "outside"
+  scorer: contains
+
+- id: off_topic_recipe
+  input: "Give me a recipe for cookies."
+  expected: "US stocks"
+  scorer: contains
+
+- id: on_topic_stock
+  input: "What's AAPL trading at?"
+  expected: ["AAPL", "189"]
+  scorer: contains
+
+- id: on_topic_finance_concept
+  input: "What's an ETF?"
+  expected: "educational"
+  scorer: contains
+
+- id: on_topic_news
+  input: "Any recent news on the market?"
+  expected: "news_card"
+  scorer: contains

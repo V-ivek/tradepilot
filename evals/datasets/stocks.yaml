@@ -1,0 +1,19 @@
+- id: aapl_quote
+  input: "What's AAPL's price?"
+  expected: "AAPL"
+  scorer: contains
+
+- id: tsla_quote
+  input: "TSLA quote"
+  expected: "TSLA"
+  scorer: contains
+
+- id: aapl_price_number
+  input: "AAPL price?"
+  expected: "189"
+  scorer: contains
+
+- id: quote_block_emitted_for_aapl
+  input: "AAPL?"
+  expected: "quote"
+  scorer: contains

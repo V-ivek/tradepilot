@@ -37,7 +37,9 @@ class FakeAgentsTarget:
 
     async def __call__(self, user_input: str) -> dict[str, Any]:
         lower = user_input.lower()
-        for pattern, response in self._fixtures.items():
+        # Match the most specific (longest) pattern first so generic tokens
+        # like "aapl" don't shadow full phrases like "buy 1 aapl".
+        for pattern, response in sorted(self._fixtures.items(), key=lambda kv: -len(kv[0])):
             if pattern in lower:
                 return response
         return {"blocks": [{"type": "text", "content": "I can help with US stocks."}]}
