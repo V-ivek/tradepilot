@@ -26,8 +26,6 @@ from typing import Any
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, StateGraph
 
-logger = logging.getLogger(__name__)
-
 from src.agent.nodes.account_agent import account_agent_node
 from src.agent.nodes.confirmation import confirmation_gate_node
 from src.agent.nodes.confirmation_classifier import confirmation_classifier_node
@@ -42,6 +40,8 @@ from src.agent.nodes.stock_agent import stock_agent_node
 from src.agent.nodes.trade_agent import trade_agent_node
 from src.agent.nodes.validator import validator_node
 from src.agent.state import AssistantState
+
+logger = logging.getLogger(__name__)
 
 AGENT_NODES = (
     "news_agent",

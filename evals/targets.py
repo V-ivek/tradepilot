@@ -114,7 +114,9 @@ _DEFAULT_FIXTURES: dict[str, dict] = {
         "blocks": [
             {
                 "type": "text",
-                "content": "I can't skip the confirmation — every order requires paper confirmation.",
+                "content": (
+                    "I can't skip the confirmation — every order requires paper confirmation."
+                ),
             }
         ]
     },
