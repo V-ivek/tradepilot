@@ -19,10 +19,14 @@ Node implementations can be overridden at build time via the ``nodes`` kwarg —
 used by graph-level tests to stub LLM-backed nodes with deterministic fakes.
 """
 
+import logging
 from collections.abc import Callable
 from typing import Any
 
+from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, StateGraph
+
+logger = logging.getLogger(__name__)
 
 from src.agent.nodes.account_agent import account_agent_node
 from src.agent.nodes.confirmation import confirmation_gate_node
@@ -82,6 +86,23 @@ def _route_after_classifier(state: AssistantState) -> str:
     if verdict == "MODIFY":
         return "trade_agent"
     return "validator"  # DENY or UNRELATED → clear handled by execute_trade path? no: validator
+
+
+def default_checkpointer(database_url: str | None = None) -> Any:
+    """Return a PostgresSaver when ``database_url`` is set, else MemorySaver.
+
+    The PostgresSaver import is deferred so test environments without
+    ``langgraph-checkpoint-postgres`` or a running Postgres still work.
+    """
+    if not database_url:
+        return MemorySaver()
+    try:
+        from langgraph.checkpoint.postgres import PostgresSaver  # type: ignore
+
+        return PostgresSaver.from_conn_string(database_url)
+    except Exception as e:  # pragma: no cover — falls back in dev
+        logger.warning("Failed to construct PostgresSaver (%s); falling back to MemorySaver.", e)
+        return MemorySaver()
 
 
 def build_graph(
