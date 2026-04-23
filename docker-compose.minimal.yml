@@ -1,0 +1,60 @@
+# 3-container quickstart: app + gateway + postgres.
+# No LiteLLM, Langfuse, or Redis. Uses ANTHROPIC_API_KEY directly,
+# in-memory cache, no tracing.
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: assistant
+      POSTGRES_PASSWORD: assistant
+      POSTGRES_DB: assistant
+    ports:
+      - "4703:5432"
+    volumes:
+      - postgres-data-minimal:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U assistant"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  gateway:
+    build:
+      context: .
+      dockerfile: gateway/Dockerfile
+    ports:
+      - "4706:8000"
+    environment:
+      ALPACA_API_KEY_ID: ${ALPACA_API_KEY_ID}
+      ALPACA_API_SECRET_KEY: ${ALPACA_API_SECRET_KEY}
+      ALPACA_PAPER_ONLY: "true"
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "4700:8000"
+    environment:
+      # App talks to Anthropic directly in minimal mode. LiteLLM exposes the
+      # OpenAI wire format, so we still point LITELLM_BASE_URL at an OpenAI-
+      # compatible endpoint. LiteLLM Python SDK can serve this in-process,
+      # but for v0.1 "minimal" the user is expected to set LITELLM_BASE_URL
+      # themselves or run an outside proxy.
+      LITELLM_BASE_URL: ${LITELLM_BASE_URL:-https://api.anthropic.com/v1}
+      LITELLM_API_KEY: ${ANTHROPIC_API_KEY:-sk-dev}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      DATABASE_URL: postgresql+asyncpg://assistant:assistant@postgres:5432/assistant
+      REDIS_URL: redis://localhost:6379/0  # unused; in-memory cache
+      GATEWAY_URL: http://gateway:8000
+      ALPACA_PAPER_ONLY: "true"
+      JWT_SECRET: ${JWT_SECRET:-dev-secret-change-me}
+      SEMANTIC_CACHE_ENABLED: "true"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      gateway:
+        condition: service_started
+
+volumes:
+  postgres-data-minimal:
