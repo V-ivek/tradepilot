@@ -35,17 +35,14 @@ def test_database_url_uses_postgres_saver_when_available():
     assert saver is not None
 
 
-def test_postgres_import_failure_falls_back_to_memory():
-    def _raise_import(*args, **kwargs):
-        raise ImportError("no module")
+def test_postgres_from_conn_string_failure_falls_back_to_memory():
+    class _BrokenPostgres:
+        @classmethod
+        def from_conn_string(cls, url):
+            raise RuntimeError("cannot connect")
 
-    with (
-        patch(
-            "src.agent.graph.default_checkpointer.__globals__",
-            {},
-        ),
-        patch.dict("sys.modules", {"langgraph.checkpoint.postgres": None}),
-    ):
+    module = type("_Mod", (), {"PostgresSaver": _BrokenPostgres})
+    with patch.dict("sys.modules", {"langgraph.checkpoint.postgres": module}):
         saver = default_checkpointer("postgresql://x")
 
     assert isinstance(saver, MemorySaver)
