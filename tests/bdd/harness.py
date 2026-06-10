@@ -39,16 +39,36 @@ JWT_ALGO = "HS256"
 # ---------- Fake data provider used by the gateway app ----------
 
 
+DEMO_UNIVERSE: dict[str, tuple[str, Decimal]] = {
+    "AAPL": ("Apple Inc", Decimal("189.55")),
+    "TSLA": ("Tesla, Inc.", Decimal("200.00")),
+    "NVDA": ("NVIDIA Corporation", Decimal("920.10")),
+    "MSFT": ("Microsoft Corporation", Decimal("415.30")),
+    "GOOG": ("Alphabet Inc", Decimal("172.40")),
+    "AMZN": ("Amazon.com, Inc.", Decimal("185.20")),
+}
+
+COMPANY_NAME_TO_TICKER = {
+    "apple": "AAPL",
+    "tesla": "TSLA",
+    "nvidia": "NVDA",
+    "microsoft": "MSFT",
+    "google": "GOOG",
+    "alphabet": "GOOG",
+    "amazon": "AMZN",
+}
+
+
 class _FakeDataProvider(DataProvider):
     """Deterministic quotes / symbol search / news for the E2E harness."""
 
     async def get_quote(self, ticker: str) -> QuoteData | None:
-        prices = {"AAPL": Decimal("189.55"), "TSLA": Decimal("200.00")}
-        if ticker.upper() not in prices:
+        entry = DEMO_UNIVERSE.get(ticker.upper())
+        if entry is None:
             return None
         return QuoteData(
             ticker=ticker.upper(),
-            price=prices[ticker.upper()],
+            price=entry[1],
             change=Decimal("1.00"),
             change_pct=Decimal("0.5"),
         )
@@ -60,13 +80,34 @@ class _FakeDataProvider(DataProvider):
         return None
 
     async def get_price_history(self, ticker: str, *, period="1M"):
-        return []
+        from gateway.models import PriceBar
+
+        entry = DEMO_UNIVERSE.get(ticker.upper())
+        if entry is None:
+            return []
+        base = entry[1]
+        bars = []
+        # 14 deterministic daily bars in a gentle synthetic wave around base.
+        for i in range(14):
+            drift = Decimal(i - 7) * (base / Decimal("400"))
+            wiggle = (base / Decimal("200")) if i % 2 else -(base / Decimal("200"))
+            close = base + drift + wiggle
+            bars.append(
+                PriceBar(
+                    timestamp=datetime.now(timezone.utc) - timedelta(days=13 - i),
+                    open=close - Decimal("0.5"),
+                    high=close + Decimal("1"),
+                    low=close - Decimal("1"),
+                    close=close,
+                    volume=1_000_000 + i * 10_000,
+                )
+            )
+        return bars
 
     async def search_symbols(self, query: str, *, limit=10) -> list[SymbolMatch]:
         needle = query.strip().upper()
-        known = {"AAPL": "Apple Inc", "TSLA": "Tesla, Inc."}
-        if needle in known:
-            return [SymbolMatch(ticker=needle, name=known[needle])]
+        if needle in DEMO_UNIVERSE:
+            return [SymbolMatch(ticker=needle, name=DEMO_UNIVERSE[needle][0])]
         return []
 
     async def get_news(self, *, query=None, tickers=None, limit=20):
@@ -92,15 +133,21 @@ async def _fake_guard(state, *, model=None):
         state["category"] = "trade"
         return state
 
-    tickers = []
-    for sym in ("AAPL", "TSLA"):
-        if sym.lower() in text or sym in state.get("user_input", ""):
-            tickers.append(sym)
-    for t in tickers:
-        if t not in state["active_tickers"]:
-            state["active_tickers"].append(t)
-
     import re
+
+    # Ticker extraction: explicit uppercase symbols + company-name lookup.
+    mentioned: list[str] = []
+    for token in re.findall(r"\b[A-Z]{1,5}\b", state.get("user_input", "")):
+        if token in DEMO_UNIVERSE and token not in mentioned:
+            mentioned.append(token)
+    for word in re.findall(r"[a-z']+", text):
+        sym = COMPANY_NAME_TO_TICKER.get(word)
+        if sym and sym not in mentioned:
+            mentioned.append(sym)
+    # Tickers mentioned this turn replace the carried-over context, so a
+    # question about NVDA doesn't answer with last turn's AAPL.
+    if mentioned:
+        state["active_tickers"] = mentioned
 
     words = set(re.findall(r"[a-z']+", text))
     if {"weather", "recipe", "recipes"} & words:
@@ -122,18 +169,56 @@ async def _fake_guard(state, *, model=None):
 
 
 async def _fake_stock_agent(state, *, model=None):
+    """Fetch real quotes/history through the gateway (FakeDataProvider behind it)."""
+    import re
+
+    from src.services.gateway import get_gateway_client
+
     blocks = state.setdefault("blocks", [])
-    for ticker in state.get("active_tickers") or ["AAPL"]:
+    gateway = get_gateway_client()
+    tickers = state.get("active_tickers") or ["AAPL"]
+    text = state.get("user_input", "").lower()
+    wants_history = bool(
+        re.search(r"\b(chart|history|week|weeks|month|months|past|trend|doing)\b", text)
+    )
+
+    answered = False
+    for ticker in tickers:
+        quote = await gateway.get_quote(ticker)
+        if quote is None:
+            blocks.append(
+                {
+                    "type": "text",
+                    "content": (
+                        f"Demo mode has no data for {ticker}. Try one of: "
+                        f"{', '.join(sorted(DEMO_UNIVERSE))}."
+                    ),
+                }
+            )
+            continue
+        answered = True
         blocks.append(
             {
                 "type": "quote",
-                "symbol": ticker,
-                "price": "189.55" if ticker == "AAPL" else "200.00",
-                "change": "1.00",
-                "change_pct": "0.5",
+                "symbol": quote.ticker,
+                "price": str(quote.price),
+                "change": str(quote.change or "0"),
+                "change_pct": str(quote.change_pct or "0"),
             }
         )
-    blocks.append({"type": "text", "content": "Quote retrieved."})
+        if wants_history:
+            bars = await gateway.get_price_history(ticker, period="1M")
+            if bars:
+                blocks.append(
+                    {
+                        "type": "chart",
+                        "symbol": quote.ticker,
+                        "timeframe": "2W",
+                        "data": [b.model_dump(mode="json") for b in bars],
+                    }
+                )
+    if answered:
+        blocks.append({"type": "text", "content": "Quote retrieved."})
     return state
 
 
