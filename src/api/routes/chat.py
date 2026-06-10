@@ -73,7 +73,9 @@ async def chat(
     async def event_stream() -> AsyncIterator[dict[str, str]]:
         yield _sse("message_start", {"conversation_id": conv.id})
         try:
-            result = await graph.ainvoke(state)
+            # thread_id keys the checkpointer to this conversation; harmless
+            # for checkpointer-less graphs.
+            result = await graph.ainvoke(state, config={"configurable": {"thread_id": conv.id}})
         except Exception as e:
             logger.exception("chat graph invocation failed")
             yield _sse(

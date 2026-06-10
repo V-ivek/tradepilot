@@ -173,3 +173,29 @@ def test_chat_forbids_cross_user_conversation_access():
         headers={"Authorization": f"Bearer {_token('bob')}"},
     )
     assert bob.status_code == 403
+
+
+def test_chat_works_with_checkpointer_backed_graph():
+    """Regression: the route must pass thread_id config so checkpointer-backed
+    graphs (the production lifespan default) don't fail on every request."""
+    from langgraph.checkpoint.memory import MemorySaver
+
+    graph = build_graph(
+        nodes={"guard": _quote_guard, "stock_agent": _quote_stock},
+        checkpointer=MemorySaver(),
+    )
+    app = FastAPI()
+    app.state.graph = graph
+    app.include_router(chat.router)
+    client = TestClient(app)
+
+    r = client.post(
+        "/chat",
+        json={"user_input": "AAPL?"},
+        headers={"Authorization": f"Bearer {_token()}"},
+    )
+    assert r.status_code == 200
+    events = _parse_sse(r.text)
+    names = [n for n, _ in events]
+    assert "error" not in names, [p for n, p in events if n in ("error", "message_end")]
+    assert any(p.get("type") == "quote" for n, p in events if n == "block")
