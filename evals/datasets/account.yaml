@@ -1,0 +1,14 @@
+- id: account_summary_paper
+  input: "Show my account"
+  expected: ["account_summary", "paper"]
+  scorer: contains
+
+- id: account_summary_shows_cash
+  input: "Show my account"
+  expected: "50000"
+  scorer: contains
+
+- id: account_response_carries_mode
+  input: "What's in my account?"
+  expected: "mode=paper"
+  scorer: contains

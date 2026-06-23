@@ -1,0 +1,61 @@
+site_name: tradepilot
+site_description: Open-source conversational AI trading assistant powered by Alpaca paper trading.
+repo_url: https://github.com/anthropics/tradepilot
+site_url: https://tradepilot.dev/
+
+theme:
+  name: material
+  palette:
+    - scheme: default
+      primary: amber
+    - scheme: slate
+      primary: amber
+  features:
+    - navigation.sections
+    - navigation.top
+    - content.code.copy
+    - content.code.annotate
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+  - pymdownx.highlight
+  - pymdownx.inlinehilite
+  - pymdownx.tabbed:
+      alternate_style: true
+  - toc:
+      permalink: true
+
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          paths: [src, gateway]
+
+nav:
+  - Home: index.md
+  - Getting started:
+      - Quickstart: getting-started/quickstart.md
+  - Overview:
+      - What it does: overview/what-it-does.md
+      - Safety: overview/safety.md
+  - Architecture:
+      - System overview: architecture/system-overview.md
+      - Agent graph: architecture/agent-graph.md
+      - Confirmation gate: architecture/confirmation-gate.md
+      - Paper-trading safety: architecture/paper-trading-safety.md
+      - Provider abstraction: architecture/provider-abstraction.md
+  - Reference:
+      - Block types: reference/block-types.md
+      - State schema: reference/state-schema.md
+      - Configuration: reference/configuration.md
+  - Development:
+      - Adding an agent: development/adding-an-agent.md
+      - Adding a tool: development/adding-a-tool.md
+  - Deployment:
+      - Docker: deployment/docker.md

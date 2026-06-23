@@ -1,0 +1,9 @@
+- id: news_card_shape
+  input: "Any recent news?"
+  expected: "news_card"
+  scorer: contains
+
+- id: news_has_url
+  input: "Any recent news?"
+  expected: "https"
+  scorer: contains

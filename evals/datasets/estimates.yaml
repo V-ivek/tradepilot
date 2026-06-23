@@ -1,0 +1,9 @@
+- id: price_target_returned
+  input: "What's AAPL's price target?"
+  expected: "210"
+  scorer: contains
+
+- id: price_target_as_table
+  input: "AAPL price target"
+  expected: "table"
+  scorer: contains

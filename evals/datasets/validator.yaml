@@ -1,0 +1,14 @@
+- id: paper_mode_flag_on_trade_intent
+  input: "Buy 1 AAPL"
+  expected: "mode=paper"
+  scorer: contains
+
+- id: confirmation_copy_says_paper
+  input: "Buy 1 AAPL"
+  expected: "paper"
+  scorer: contains
+
+- id: account_block_flagged_paper
+  input: "Show my account"
+  expected: "paper"
+  scorer: contains

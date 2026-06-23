@@ -1,0 +1,9 @@
+- id: pe_ratio_returned
+  input: "What's AAPL's PE ratio?"
+  expected: "28.5"
+  scorer: contains
+
+- id: pe_as_table
+  input: "AAPL PE ratio"
+  expected: "table"
+  scorer: contains

@@ -1,0 +1,74 @@
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+      - run: uv sync --extra dev --frozen
+      - run: uv run ruff check .
+      - run: uv run ruff format --check .
+
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+      - name: Set up Python ${{ matrix.python-version }}
+        run: uv python install ${{ matrix.python-version }}
+      - run: uv sync --extra dev --frozen --python ${{ matrix.python-version }}
+      - run: uv run --python ${{ matrix.python-version }} pytest -m "not eval" -q
+
+  docker-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build minimal stack
+        run: docker compose -f docker-compose.minimal.yml build
+      - name: Start minimal stack
+        env:
+          ALPACA_API_KEY_ID: ${{ secrets.ALPACA_API_KEY_ID || 'ci-stub' }}
+          ALPACA_API_SECRET_KEY: ${{ secrets.ALPACA_API_SECRET_KEY || 'ci-stub' }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY || 'sk-ci-stub' }}
+        run: docker compose -f docker-compose.minimal.yml up -d postgres gateway app
+      - name: Wait for app /health
+        run: |
+          for i in {1..30}; do
+            if curl -sf http://localhost:4700/health | grep -q '"trading_mode":"paper"'; then
+              echo "app healthy, trading_mode=paper"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "app did not become healthy"
+          docker compose -f docker-compose.minimal.yml logs
+          exit 1
+      - if: always()
+        run: docker compose -f docker-compose.minimal.yml down -v
+
+  evals-gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+      - run: uv sync --extra dev --frozen
+      - name: Run eval suite against FakeAgentsTarget
+        run: uv run pytest -m eval -q
