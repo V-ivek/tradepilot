@@ -71,4 +71,6 @@ jobs:
           enable-cache: true
       - run: uv sync --extra dev --frozen
       - name: Run eval suite against FakeAgentsTarget
-        run: uv run pytest -m eval -q
+        # evals/ lives outside testpaths (=tests), so point pytest at it explicitly;
+        # otherwise -m eval collects 0 tests and pytest exits 5.
+        run: uv run pytest evals/ -m eval -q
