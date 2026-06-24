@@ -16,27 +16,76 @@ def _make_provider(stock=None, news=None, trading=None):
     )
 
 
-async def test_get_quote_maps_bid_ask_to_mid():
-    quote = SimpleNamespace(
-        bid_price=189.50,
-        ask_price=189.60,
-        timestamp=datetime(2026, 4, 22, 14, 30, tzinfo=timezone.utc),
+def _snapshot(*, trade_price, daily=None, prev_close=None):
+    daily = daily or {}
+    return SimpleNamespace(
+        latest_trade=SimpleNamespace(
+            price=trade_price,
+            timestamp=datetime(2026, 6, 22, 20, 45, tzinfo=timezone.utc),
+        ),
+        daily_bar=SimpleNamespace(
+            open=daily.get("open"),
+            high=daily.get("high"),
+            low=daily.get("low"),
+            close=daily.get("close"),
+            volume=daily.get("volume", 0),
+        ),
+        previous_daily_bar=SimpleNamespace(close=prev_close),
     )
+
+
+async def test_get_quote_uses_latest_trade_price_and_computes_change():
     stock = MagicMock()
-    stock.get_stock_latest_quote.return_value = {"AAPL": quote}
+    stock.get_stock_snapshot.return_value = {
+        "AAPL": _snapshot(
+            trade_price=296.64,
+            daily={"open": 297.41, "high": 302.41, "low": 296.82, "close": 296.85, "volume": 10},
+            prev_close=297.86,
+        )
+    }
     p = _make_provider(stock=stock)
 
     result = await p.get_quote("aapl")
 
     assert result is not None
     assert result.ticker == "AAPL"
-    assert result.price == Decimal("189.55")
-    stock.get_stock_latest_quote.assert_called_once()
+    assert result.price == Decimal("296.64")  # last trade, NOT a bid/ask mid
+    assert result.previous_close == Decimal("297.86")
+    assert result.change == Decimal("296.64") - Decimal("297.86")
+    assert result.change_pct is not None and result.change_pct < 0
+
+
+async def test_get_quote_regression_no_half_price_from_zero_ask():
+    # The original bug: (bid + 0-ask)/2 produced half the real price. We now use
+    # the trade price, so a zero/empty ask in the snapshot is irrelevant.
+    stock = MagicMock()
+    stock.get_stock_snapshot.return_value = {
+        "AAPL": _snapshot(trade_price=282.90, prev_close=283.00)
+    }
+    p = _make_provider(stock=stock)
+
+    result = await p.get_quote("AAPL")
+
+    assert result is not None
+    assert result.price == Decimal("282.90")  # not 141.45
+
+
+async def test_get_quote_falls_back_to_daily_close_when_no_trade():
+    stock = MagicMock()
+    stock.get_stock_snapshot.return_value = {
+        "AAPL": _snapshot(trade_price=0, daily={"close": 300.0}, prev_close=299.0)
+    }
+    p = _make_provider(stock=stock)
+
+    result = await p.get_quote("AAPL")
+
+    assert result is not None
+    assert result.price == Decimal("300.0")
 
 
 async def test_get_quote_returns_none_on_exception():
     stock = MagicMock()
-    stock.get_stock_latest_quote.side_effect = RuntimeError("429")
+    stock.get_stock_snapshot.side_effect = RuntimeError("429")
     p = _make_provider(stock=stock)
 
     assert await p.get_quote("AAPL") is None
@@ -44,7 +93,7 @@ async def test_get_quote_returns_none_on_exception():
 
 async def test_get_quote_returns_none_when_symbol_missing():
     stock = MagicMock()
-    stock.get_stock_latest_quote.return_value = {}
+    stock.get_stock_snapshot.return_value = {}
     p = _make_provider(stock=stock)
 
     assert await p.get_quote("AAPL") is None
