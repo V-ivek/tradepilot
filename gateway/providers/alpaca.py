@@ -9,9 +9,10 @@ import logging
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
+from alpaca.data.enums import DataFeed
 from alpaca.data.historical.news import NewsClient
 from alpaca.data.historical.stock import StockHistoricalDataClient
-from alpaca.data.requests import NewsRequest, StockBarsRequest, StockLatestQuoteRequest
+from alpaca.data.requests import NewsRequest, StockBarsRequest, StockSnapshotRequest
 from alpaca.data.timeframe import TimeFrame, TimeFrameUnit
 from alpaca.trading.client import TradingClient
 from alpaca.trading.enums import AssetClass, AssetStatus
@@ -58,34 +59,63 @@ class AlpacaProvider(DataProvider):
         )
 
     async def get_quote(self, ticker: str) -> QuoteData | None:
+        """Build a complete quote from Alpaca's snapshot (IEX feed).
+
+        Uses the latest *trade* price — the bid/ask mid is unreliable on the
+        free IEX feed off-hours (one side is often 0). Change/%/OHLC come from
+        the daily and previous-daily bars in the same snapshot call.
+        """
         ticker = ticker.upper()
         try:
-            req = StockLatestQuoteRequest(symbol_or_symbols=ticker)
-            result = await asyncio.to_thread(self._stock.get_stock_latest_quote, req)
+            req = StockSnapshotRequest(symbol_or_symbols=ticker, feed=DataFeed.IEX)
+            result = await asyncio.to_thread(self._stock.get_stock_snapshot, req)
         except Exception as e:
             logger.error("AlpacaProvider.get_quote(%s) failed: %s", ticker, e)
             return None
 
-        quote = result.get(ticker) if isinstance(result, dict) else None
-        if quote is None:
+        snap = result.get(ticker) if isinstance(result, dict) else None
+        if snap is None:
             return None
 
-        bid = getattr(quote, "bid_price", None)
-        ask = getattr(quote, "ask_price", None)
-        mid: Decimal | None = None
-        if bid is not None and ask is not None:
-            mid = (Decimal(str(bid)) + Decimal(str(ask))) / Decimal(2)
-        elif ask is not None:
-            mid = Decimal(str(ask))
-        elif bid is not None:
-            mid = Decimal(str(bid))
-        if mid is None:
+        def _pos(value) -> Decimal | None:
+            """Return Decimal(value) only if it is a positive number."""
+            if value is None:
+                return None
+            try:
+                d = Decimal(str(value))
+            except Exception:
+                return None
+            return d if d > 0 else None
+
+        latest_trade = getattr(snap, "latest_trade", None)
+        daily_bar = getattr(snap, "daily_bar", None)
+        prev_bar = getattr(snap, "previous_daily_bar", None)
+
+        price = _pos(getattr(latest_trade, "price", None))
+        if price is None and daily_bar is not None:
+            price = _pos(getattr(daily_bar, "close", None))
+        if price is None:
             return None
 
+        prev_close = _pos(getattr(prev_bar, "close", None))
+        change = change_pct = None
+        if prev_close is not None:
+            cents = Decimal("0.01")
+            change = (price - prev_close).quantize(cents)
+            change_pct = ((price - prev_close) / prev_close * Decimal(100)).quantize(cents)
+
+        ts = getattr(latest_trade, "timestamp", None)
         return QuoteData(
             ticker=ticker,
-            price=mid,
-            timestamp=getattr(quote, "timestamp", None),
+            price=price,
+            change=change,
+            change_pct=change_pct,
+            high=_pos(getattr(daily_bar, "high", None)),
+            low=_pos(getattr(daily_bar, "low", None)),
+            open=_pos(getattr(daily_bar, "open", None)),
+            previous_close=prev_close,
+            volume=int(getattr(daily_bar, "volume", 0) or 0) or None,
+            timestamp=ts,
         )
 
     async def get_price_history(self, ticker: str, *, period: str = "1M") -> list[PriceBar]:
@@ -99,6 +129,7 @@ class AlpacaProvider(DataProvider):
                 timeframe=timeframe,
                 start=start,
                 end=end,
+                feed=DataFeed.IEX,  # free plan has no SIP access; SIP returns empty
             )
             result = await asyncio.to_thread(self._stock.get_stock_bars, req)
         except Exception as e:
